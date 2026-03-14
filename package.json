@@ -1,0 +1,20 @@
+{
+  "name": "trainr-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run start:dev --workspace=apps/api",
+    "dev:mobile": "npx expo start --workspace=apps/mobile",
+    "build:types": "npm run build --workspace=packages/shared-types",
+    "db:up": "docker compose -f docker/docker-compose.yml up -d",
+    "db:down": "docker compose -f docker/docker-compose.yml down",
+    "db:migrate": "psql $DATABASE_URL -f apps/api/src/database/migrations/001_initial_schema.sql",
+    "db:reset": "docker compose -f docker/docker-compose.yml down -v && docker compose -f docker/docker-compose.yml up -d",
+    "test:api": "npm run test --workspace=apps/api",
+    "test:api:e2e": "npm run test:e2e --workspace=apps/api"
+  }
+}
