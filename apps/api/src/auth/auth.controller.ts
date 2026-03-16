@@ -36,7 +36,10 @@ export class AuthController {
   @ApiResponse({ status: 201, description: 'Coach registrado exitosamente' })
   @ApiResponse({ status: 409, description: 'Email ya registrado' })
   async register(@Body() dto: RegisterCoachDto, @Req() req: Request) {
-    const data = await this.authService.registerCoach(dto);
+    const data = await this.authService.registerCoach(dto, {
+      userAgent: req.headers['user-agent'],
+      ip: req.ip,
+    });
     return { data };
   }
 
