@@ -15,7 +15,7 @@ export class TrainingPlan {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'coach_id' })
+  @Column({ name: 'coach_id', type: 'uuid' })
   coachId: string;
 
   @ManyToOne(() => Coach, { onDelete: 'CASCADE' })
@@ -28,18 +28,18 @@ export class TrainingPlan {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ name: 'total_weeks', nullable: true })
+  @Column({ name: 'total_weeks', type: 'int', nullable: true })
   totalWeeks: number | null;
 
-  @Column({ name: 'cycle_weeks', nullable: true })
+  @Column({ name: 'cycle_weeks', type: 'int', nullable: true })
   cycleWeeks: number | null;
 
   @Column({ name: 'auto_cycle', default: false })
   autoCycle: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

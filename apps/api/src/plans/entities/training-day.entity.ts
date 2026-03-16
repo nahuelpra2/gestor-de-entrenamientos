@@ -14,7 +14,7 @@ export class TrainingDay {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'plan_id' })
+  @Column({ name: 'plan_id', type: 'uuid' })
   planId: string;
 
   @ManyToOne(() => TrainingPlan, { onDelete: 'CASCADE' })
@@ -27,7 +27,7 @@ export class TrainingDay {
   @Column({ name: 'day_of_week' })
   dayOfWeek: number; // ISO: 1=lunes, 7=domingo
 
-  @Column({ length: 100, nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   name: string | null;
 
   @Column({ name: 'order_index', default: 0 })
@@ -36,6 +36,6 @@ export class TrainingDay {
   @Column({ name: 'is_rest_day', default: false })
   isRestDay: boolean;
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }
