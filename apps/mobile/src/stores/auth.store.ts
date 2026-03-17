@@ -23,6 +23,7 @@ interface AuthState {
   refreshToken: string | null;
   userId: string | null;
   userRole: UserRole | null;
+  hasHydrated: boolean;
 
   // Acciones
   setSession: (params: {
@@ -33,6 +34,7 @@ interface AuthState {
   }) => void;
   clearSession: () => void;
   isAuthenticated: () => boolean;
+  setHasHydrated: (value: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -42,17 +44,26 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       userId: null,
       userRole: null,
+      hasHydrated: false,
 
       setSession: ({ accessToken, refreshToken, userId, userRole }) => {
+        void SecureStore.setItemAsync('access_token', accessToken);
+        void SecureStore.setItemAsync('refresh_token', refreshToken);
         set({ accessToken, refreshToken, userId, userRole });
       },
 
       clearSession: () => {
+        void SecureStore.deleteItemAsync('access_token');
+        void SecureStore.deleteItemAsync('refresh_token');
         set({ accessToken: null, refreshToken: null, userId: null, userRole: null });
       },
 
       isAuthenticated: () => {
         return get().accessToken !== null;
+      },
+
+      setHasHydrated: (value: boolean) => {
+        set({ hasHydrated: value });
       },
     }),
     {
@@ -65,6 +76,9 @@ export const useAuthStore = create<AuthState>()(
         userId: state.userId,
         userRole: state.userRole,
       }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     },
   ),
 );

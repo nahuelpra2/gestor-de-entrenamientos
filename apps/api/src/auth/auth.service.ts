@@ -5,7 +5,7 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, EntityManager } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -48,7 +48,7 @@ export class AuthService {
 
   // ─── Registro de coach ────────────────────────────────────────────────────
 
-  async registerCoach(dto: RegisterCoachDto) {
+  async registerCoach(dto: RegisterCoachDto, meta: { userAgent?: string; ip?: string } = {}) {
     const existing = await this.userRepo.findOne({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException({
@@ -74,7 +74,7 @@ export class AuthService {
       });
       await manager.save(coach);
 
-      return this.buildAuthResponse(user);
+      return this.buildAuthResponse(user, meta, manager);
     });
   }
 
@@ -211,6 +211,7 @@ export class AuthService {
   private async buildAuthResponse(
     user: User,
     meta: { userAgent?: string; ip?: string } = {},
+    manager?: EntityManager,
   ) {
     const accessToken = this.signAccessToken(user);
     const rawRefreshToken = this.generateOpaqueToken();
@@ -218,7 +219,11 @@ export class AuthService {
     const familyId = uuidv4();
     const expiresAt = this.getRefreshExpiry();
 
-    const refreshToken = this.refreshTokenRepo.create({
+    const refreshTokenRepo = manager
+      ? manager.getRepository(RefreshToken)
+      : this.refreshTokenRepo;
+
+    const refreshToken = refreshTokenRepo.create({
       userId: user.id,
       tokenHash,
       familyId,
@@ -226,7 +231,7 @@ export class AuthService {
       userAgent: meta.userAgent ?? null,
       ipAddress: meta.ip ?? null,
     });
-    await this.refreshTokenRepo.save(refreshToken);
+    await refreshTokenRepo.save(refreshToken);
 
     return {
       access_token: accessToken,

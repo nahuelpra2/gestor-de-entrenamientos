@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -12,6 +13,7 @@ import { PlanDayExercise } from './entities/plan-day-exercise.entity';
 import { PlanAssignment } from './entities/plan-assignment.entity';
 import { Athlete } from '../users/athlete.entity';
 import { Coach } from '../users/coach.entity';
+import { Exercise } from '../exercises/exercise.entity';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 import { CreateTrainingDayDto } from './dto/create-training-day.dto';
@@ -35,6 +37,8 @@ export class PlansService {
     private readonly athleteRepo: Repository<Athlete>,
     @InjectRepository(Coach)
     private readonly coachRepo: Repository<Coach>,
+    @InjectRepository(Exercise)
+    private readonly domainExerciseRepo: Repository<Exercise>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -42,7 +46,8 @@ export class PlansService {
   // PLANES
   // ══════════════════════════════════════════════════════════════
 
-  async findAllPlans(coachId: string) {
+  async findAllPlans(userId: string) {
+    const coachId = await this.resolveCoachId(userId);
     const plans = await this.planRepo.find({
       where: { coachId },
       order: { createdAt: 'DESC' },
@@ -50,14 +55,16 @@ export class PlansService {
     return plans;
   }
 
-  async findOnePlan(planId: string, coachId: string): Promise<TrainingPlan> {
+  async findOnePlan(planId: string, userId: string): Promise<TrainingPlan> {
+    const coachId = await this.resolveCoachId(userId);
     const plan = await this.planRepo.findOne({ where: { id: planId } });
     if (!plan) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Plan no encontrado' });
     assertOwnership(plan.coachId, coachId, 'FORBIDDEN');
     return plan;
   }
 
-  async createPlan(dto: CreatePlanDto, coachId: string): Promise<TrainingPlan> {
+  async createPlan(dto: CreatePlanDto, userId: string): Promise<TrainingPlan> {
+    const coachId = await this.resolveCoachId(userId);
     if (dto.cycle_weeks && dto.total_weeks && dto.cycle_weeks > dto.total_weeks) {
       throw new BadRequestException({
         error: 'VALIDATION_ERROR',
@@ -77,8 +84,8 @@ export class PlansService {
     return this.planRepo.save(plan);
   }
 
-  async updatePlan(planId: string, dto: UpdatePlanDto, coachId: string): Promise<TrainingPlan> {
-    const plan = await this.findOnePlan(planId, coachId);
+  async updatePlan(planId: string, dto: UpdatePlanDto, userId: string): Promise<TrainingPlan> {
+    const plan = await this.findOnePlan(planId, userId);
 
     if (dto.name !== undefined) plan.name = dto.name;
     if (dto.description !== undefined) plan.description = dto.description ?? null;
@@ -89,8 +96,8 @@ export class PlansService {
     return this.planRepo.save(plan);
   }
 
-  async deletePlan(planId: string, coachId: string): Promise<void> {
-    const plan = await this.findOnePlan(planId, coachId);
+  async deletePlan(planId: string, userId: string): Promise<void> {
+    const plan = await this.findOnePlan(planId, userId);
 
     const activeAssignment = await this.assignmentRepo.findOne({
       where: { planId: plan.id, status: 'active' },
@@ -106,8 +113,9 @@ export class PlansService {
     await this.planRepo.remove(plan);
   }
 
-  async duplicatePlan(planId: string, coachId: string): Promise<TrainingPlan> {
-    const original = await this.findOnePlan(planId, coachId);
+  async duplicatePlan(planId: string, userId: string): Promise<TrainingPlan> {
+    const coachId = await this.resolveCoachId(userId);
+    const original = await this.findOnePlan(planId, userId);
     const days = await this.dayRepo.find({ where: { planId } });
 
     return this.dataSource.transaction(async (manager) => {
@@ -159,8 +167,8 @@ export class PlansService {
   // TRAINING DAYS
   // ══════════════════════════════════════════════════════════════
 
-  async findDays(planId: string, coachId: string) {
-    await this.findOnePlan(planId, coachId); // valida ownership
+  async findDays(planId: string, userId: string) {
+    await this.findOnePlan(planId, userId); // valida ownership
     const days = await this.dayRepo.find({
       where: { planId },
       order: { weekNumber: 'ASC', dayOfWeek: 'ASC' },
@@ -168,8 +176,8 @@ export class PlansService {
     return days;
   }
 
-  async addDay(planId: string, dto: CreateTrainingDayDto, coachId: string): Promise<TrainingDay> {
-    await this.findOnePlan(planId, coachId);
+  async addDay(planId: string, dto: CreateTrainingDayDto, userId: string): Promise<TrainingDay> {
+    await this.findOnePlan(planId, userId);
 
     // Verificar que no exista ya ese día en esa semana
     const existing = await this.dayRepo.findOne({
@@ -198,9 +206,9 @@ export class PlansService {
     planId: string,
     dayId: string,
     dto: Partial<CreateTrainingDayDto>,
-    coachId: string,
+    userId: string,
   ): Promise<TrainingDay> {
-    await this.findOnePlan(planId, coachId);
+    await this.findOnePlan(planId, userId);
     const day = await this.dayRepo.findOne({ where: { id: dayId, planId } });
     if (!day) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Día no encontrado' });
 
@@ -210,8 +218,8 @@ export class PlansService {
     return this.dayRepo.save(day);
   }
 
-  async deleteDay(planId: string, dayId: string, coachId: string): Promise<void> {
-    await this.findOnePlan(planId, coachId);
+  async deleteDay(planId: string, dayId: string, userId: string): Promise<void> {
+    await this.findOnePlan(planId, userId);
     const day = await this.dayRepo.findOne({ where: { id: dayId, planId } });
     if (!day) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Día no encontrado' });
     await this.dayRepo.remove(day);
@@ -221,8 +229,8 @@ export class PlansService {
   // EJERCICIOS DEL DÍA
   // ══════════════════════════════════════════════════════════════
 
-  async findDayExercises(planId: string, dayId: string, coachId: string) {
-    await this.findOnePlan(planId, coachId);
+  async findDayExercises(planId: string, dayId: string, userId: string) {
+    await this.findOnePlan(planId, userId);
     return this.exerciseRepo.find({
       where: { trainingDayId: dayId },
       relations: ['exercise'],
@@ -234,11 +242,26 @@ export class PlansService {
     planId: string,
     dayId: string,
     dto: CreatePlanExerciseDto,
-    coachId: string,
+    userId: string,
   ): Promise<PlanDayExercise> {
-    await this.findOnePlan(planId, coachId);
+    await this.findOnePlan(planId, userId);
+    const coachId = await this.resolveCoachId(userId);
     const day = await this.dayRepo.findOne({ where: { id: dayId, planId } });
     if (!day) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Día no encontrado' });
+
+    const domainExercise = await this.domainExerciseRepo.findOne({
+      where: { id: dto.exercise_id },
+    });
+    if (!domainExercise) {
+      throw new NotFoundException({ error: 'NOT_FOUND', message: 'Ejercicio no encontrado' });
+    }
+
+    if (domainExercise.createdBy !== null && domainExercise.createdBy !== coachId) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'No tenés acceso a este ejercicio',
+      });
+    }
 
     // Auto-asignar order_index si no se provee
     let orderIndex = dto.order_index;
@@ -270,9 +293,9 @@ export class PlansService {
     dayId: string,
     exId: string,
     dto: UpdatePlanExerciseDto,
-    coachId: string,
+    userId: string,
   ): Promise<PlanDayExercise> {
-    await this.findOnePlan(planId, coachId);
+    await this.findOnePlan(planId, userId);
     const ex = await this.exerciseRepo.findOne({
       where: { id: exId, trainingDayId: dayId },
       relations: ['exercise'],
@@ -293,9 +316,9 @@ export class PlansService {
     planId: string,
     dayId: string,
     exId: string,
-    coachId: string,
+    userId: string,
   ): Promise<void> {
-    await this.findOnePlan(planId, coachId);
+    await this.findOnePlan(planId, userId);
     const ex = await this.exerciseRepo.findOne({
       where: { id: exId, trainingDayId: dayId },
     });
@@ -307,8 +330,8 @@ export class PlansService {
   // ASIGNACIONES
   // ══════════════════════════════════════════════════════════════
 
-  async findAssignments(planId: string, coachId: string) {
-    await this.findOnePlan(planId, coachId);
+  async findAssignments(planId: string, userId: string) {
+    await this.findOnePlan(planId, userId);
     return this.assignmentRepo.find({
       where: { planId },
       relations: ['athlete'],
@@ -319,9 +342,10 @@ export class PlansService {
   async createAssignment(
     planId: string,
     dto: CreateAssignmentDto,
-    coachId: string,
+    userId: string,
   ): Promise<PlanAssignment> {
-    const plan = await this.findOnePlan(planId, coachId);
+    const coachId = await this.resolveCoachId(userId);
+    const plan = await this.findOnePlan(planId, userId);
 
     // Verificar que el atleta pertenece a este coach
     const athlete = await this.athleteRepo.findOne({
@@ -361,9 +385,9 @@ export class PlansService {
     planId: string,
     assignmentId: string,
     dto: { status?: 'active' | 'paused' | 'completed' | 'cancelled'; end_date?: string },
-    coachId: string,
+    userId: string,
   ): Promise<PlanAssignment> {
-    await this.findOnePlan(planId, coachId);
+    await this.findOnePlan(planId, userId);
     const assignment = await this.assignmentRepo.findOne({
       where: { id: assignmentId, planId },
     });
@@ -380,9 +404,9 @@ export class PlansService {
   async deleteAssignment(
     planId: string,
     assignmentId: string,
-    coachId: string,
+    userId: string,
   ): Promise<void> {
-    await this.findOnePlan(planId, coachId);
+    await this.findOnePlan(planId, userId);
     const assignment = await this.assignmentRepo.findOne({
       where: { id: assignmentId, planId },
     });
@@ -392,5 +416,18 @@ export class PlansService {
 
     assignment.status = 'cancelled';
     await this.assignmentRepo.save(assignment);
+  }
+
+  private async resolveCoachId(userId: string): Promise<string> {
+    const coach = await this.coachRepo.findOne({ where: { userId } });
+
+    if (!coach) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'Perfil de coach no encontrado',
+      });
+    }
+
+    return coach.id;
   }
 }

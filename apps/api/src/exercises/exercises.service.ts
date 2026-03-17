@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Exercise } from './exercise.entity';
+import { Coach } from '../users/coach.entity';
 import { CreateExerciseDto } from './dto/create-exercise.dto';
 import { UpdateExerciseDto } from './dto/update-exercise.dto';
 import { SearchExercisesDto } from './dto/search-exercises.dto';
@@ -16,17 +17,20 @@ export class ExercisesService {
   constructor(
     @InjectRepository(Exercise)
     private readonly exerciseRepo: Repository<Exercise>,
+    @InjectRepository(Coach)
+    private readonly coachRepo: Repository<Coach>,
   ) {}
 
   // ─── Búsqueda / listado ───────────────────────────────────────────────────
 
-  async search(dto: SearchExercisesDto, coachId: string) {
+  async search(dto: SearchExercisesDto, userId: string) {
+    const ownerId = await this.resolveExerciseOwnerId(userId);
     const limit = dto.limit ?? 20;
 
     const qb = this.exerciseRepo
       .createQueryBuilder('e')
       // Mostrar: ejercicios globales (created_by IS NULL) + propios del coach
-      .where('(e.created_by IS NULL OR e.created_by = :coachId)', { coachId })
+      .where('(e.created_by IS NULL OR e.created_by = :ownerId)', { ownerId })
       .orderBy('e.name', 'ASC')
       .addOrderBy('e.id', 'ASC');
 
@@ -68,7 +72,8 @@ export class ExercisesService {
 
   // ─── Detalle ──────────────────────────────────────────────────────────────
 
-  async findOne(id: string, coachId: string): Promise<Exercise> {
+  async findOne(id: string, userId: string): Promise<Exercise> {
+    const ownerId = await this.resolveExerciseOwnerId(userId);
     const exercise = await this.exerciseRepo.findOne({ where: { id } });
 
     if (!exercise) {
@@ -76,7 +81,7 @@ export class ExercisesService {
     }
 
     // Solo puede ver globales o los suyos
-    if (exercise.createdBy !== null && exercise.createdBy !== coachId) {
+    if (exercise.createdBy !== null && exercise.createdBy !== ownerId) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
         message: 'No tenés acceso a este ejercicio',
@@ -88,7 +93,8 @@ export class ExercisesService {
 
   // ─── Crear ────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateExerciseDto, coachId: string): Promise<Exercise> {
+  async create(dto: CreateExerciseDto, userId: string): Promise<Exercise> {
+    const coachId = await this.resolveCoachId(userId);
     const exercise = this.exerciseRepo.create({
       name: dto.name,
       category: dto.category,
@@ -103,8 +109,9 @@ export class ExercisesService {
 
   // ─── Actualizar ───────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateExerciseDto, coachId: string): Promise<Exercise> {
-    const exercise = await this.findOne(id, coachId);
+  async update(id: string, dto: UpdateExerciseDto, userId: string): Promise<Exercise> {
+    const coachId = await this.resolveCoachId(userId);
+    const exercise = await this.findOne(id, userId);
 
     // Solo el creador puede editar ejercicios custom
     if (exercise.createdBy !== coachId) {
@@ -121,5 +128,23 @@ export class ExercisesService {
     if (dto.instructions !== undefined) exercise.instructions = dto.instructions ?? null;
 
     return this.exerciseRepo.save(exercise);
+  }
+
+  private async resolveCoachId(userId: string): Promise<string> {
+    const coach = await this.coachRepo.findOne({ where: { userId } });
+
+    if (!coach) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'Perfil de coach no encontrado',
+      });
+    }
+
+    return coach.id;
+  }
+
+  private async resolveExerciseOwnerId(userId: string): Promise<string> {
+    const coach = await this.coachRepo.findOne({ where: { userId } });
+    return coach?.id ?? userId;
   }
 }

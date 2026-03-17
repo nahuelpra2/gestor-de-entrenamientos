@@ -13,7 +13,7 @@ export class RefreshToken {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'user_id' })
+  @Column({ name: 'user_id', type: 'uuid' })
   userId: string;
 
   @ManyToOne(() => User, { onDelete: 'CASCADE' })
@@ -26,7 +26,7 @@ export class RefreshToken {
   @Column({ name: 'family_id', type: 'uuid' })
   familyId: string;
 
-  @CreateDateColumn({ name: 'issued_at' })
+  @CreateDateColumn({ name: 'issued_at', type: 'timestamptz' })
   issuedAt: Date;
 
   @Column({ name: 'expires_at', type: 'timestamptz' })

@@ -1,13 +1,4 @@
-import {
-  Entity,
-  PrimaryGeneratedColumn,
-  Column,
-  ManyToOne,
-  OneToMany,
-  JoinColumn,
-  CreateDateColumn,
-  UpdateDateColumn,
-} from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn, UpdateDateColumn } from 'typeorm';
 import { WorkoutSession } from './workout-session.entity';
 import { WorkoutSet } from './workout-set.entity';
 import { Athlete } from '../../users/athlete.entity';
@@ -18,7 +9,7 @@ export class WorkoutLog {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ name: 'workout_session_id' })
+  @Column({ name: 'workout_session_id', type: 'uuid' })
   workoutSessionId: string;
 
   @ManyToOne(() => WorkoutSession, (session) => session.logs, {
@@ -27,17 +18,17 @@ export class WorkoutLog {
   @JoinColumn({ name: 'workout_session_id' })
   session: WorkoutSession;
 
-  @Column({ name: 'athlete_id' })
+  @Column({ name: 'athlete_id', type: 'uuid' })
   athleteId: string;
 
   @ManyToOne(() => Athlete)
   @JoinColumn({ name: 'athlete_id' })
   athlete: Athlete;
 
-  @Column({ name: 'exercise_id' })
+  @Column({ name: 'exercise_id', type: 'uuid' })
   exerciseId: string;
 
-  @Column({ name: 'training_day_id', nullable: true })
+  @Column({ name: 'training_day_id', type: 'uuid', nullable: true })
   trainingDayId: string | null;
 
   @ManyToOne(() => TrainingDay, { nullable: true })
@@ -59,9 +50,6 @@ export class WorkoutLog {
   })
   sets: WorkoutSet[];
 
-  @CreateDateColumn({ name: 'created_at' })
-  createdAt: Date;
-
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }

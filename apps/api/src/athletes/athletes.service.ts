@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -28,7 +29,8 @@ export class AthletesService {
 
   // ─── Coach: listar sus atletas ───────────────────────────────────────────
 
-  async findAllByCoach(coachId: string) {
+  async findAllByCoach(userId: string) {
+    const coachId = await this.resolveCoachId(userId);
     const athletes = await this.athleteRepo.find({
       where: { coachId },
       relations: ['user'],
@@ -40,7 +42,8 @@ export class AthletesService {
 
   // ─── Coach: detalle de un atleta ─────────────────────────────────────────
 
-  async findOne(athleteId: string, coachId: string) {
+  async findOne(athleteId: string, userId: string) {
+    const coachId = await this.resolveCoachId(userId);
     const athlete = await this.athleteRepo.findOne({
       where: { id: athleteId },
       relations: ['user'],
@@ -60,7 +63,8 @@ export class AthletesService {
   // Genera una contraseña temporal segura y la retorna una sola vez.
   // En producción, esto debe disparar un email de bienvenida con la temp password.
 
-  async create(dto: CreateAthleteDto, coachId: string) {
+  async create(dto: CreateAthleteDto, userId: string) {
+    const coachId = await this.resolveCoachId(userId);
     const existing = await this.userRepo.findOne({ where: { email: dto.email } });
     if (existing) {
       throw new ConflictException({
@@ -97,8 +101,13 @@ export class AthletesService {
       });
       await manager.save(athlete);
 
+      const athleteWithUser = await manager.findOne(Athlete, {
+        where: { id: athlete.id },
+        relations: ['user'],
+      });
+
       return {
-        athlete: this.toDto(athlete),
+        athlete: this.toDto(athleteWithUser ?? athlete),
         // Devolver temp_password UNA SOLA VEZ.
         // El atleta debe cambiarla en su primer login.
         // TODO: enviar por email en lugar de retornar en la respuesta.
@@ -109,7 +118,8 @@ export class AthletesService {
 
   // ─── Coach: actualizar atleta ─────────────────────────────────────────────
 
-  async update(athleteId: string, dto: UpdateAthleteDto, coachId: string) {
+  async update(athleteId: string, dto: UpdateAthleteDto, userId: string) {
+    const coachId = await this.resolveCoachId(userId);
     const athlete = await this.athleteRepo.findOne({
       where: { id: athleteId },
       relations: ['user'],
@@ -173,6 +183,19 @@ export class AthletesService {
       throw new NotFoundException({ error: 'NOT_FOUND', message: 'Atleta no encontrado' });
     }
     return athlete;
+  }
+
+  private async resolveCoachId(userId: string): Promise<string> {
+    const coach = await this.coachRepo.findOne({ where: { userId } });
+
+    if (!coach) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'Perfil de coach no encontrado',
+      });
+    }
+
+    return coach.id;
   }
 
   private toDto(athlete: Athlete) {
