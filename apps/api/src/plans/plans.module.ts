@@ -8,6 +8,7 @@ import { PlanDayExercise } from './entities/plan-day-exercise.entity';
 import { PlanAssignment } from './entities/plan-assignment.entity';
 import { Athlete } from '../users/athlete.entity';
 import { Coach } from '../users/coach.entity';
+import { Exercise } from '../exercises/exercise.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { Coach } from '../users/coach.entity';
       PlanAssignment,
       Athlete,
       Coach,
+      Exercise,
     ]),
   ],
   controllers: [PlansController],

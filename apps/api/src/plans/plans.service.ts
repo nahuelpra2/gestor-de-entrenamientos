@@ -13,6 +13,7 @@ import { PlanDayExercise } from './entities/plan-day-exercise.entity';
 import { PlanAssignment } from './entities/plan-assignment.entity';
 import { Athlete } from '../users/athlete.entity';
 import { Coach } from '../users/coach.entity';
+import { Exercise } from '../exercises/exercise.entity';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 import { CreateTrainingDayDto } from './dto/create-training-day.dto';
@@ -36,6 +37,8 @@ export class PlansService {
     private readonly athleteRepo: Repository<Athlete>,
     @InjectRepository(Coach)
     private readonly coachRepo: Repository<Coach>,
+    @InjectRepository(Exercise)
+    private readonly domainExerciseRepo: Repository<Exercise>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -242,8 +245,23 @@ export class PlansService {
     userId: string,
   ): Promise<PlanDayExercise> {
     await this.findOnePlan(planId, userId);
+    const coachId = await this.resolveCoachId(userId);
     const day = await this.dayRepo.findOne({ where: { id: dayId, planId } });
     if (!day) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Día no encontrado' });
+
+    const domainExercise = await this.domainExerciseRepo.findOne({
+      where: { id: dto.exercise_id },
+    });
+    if (!domainExercise) {
+      throw new NotFoundException({ error: 'NOT_FOUND', message: 'Ejercicio no encontrado' });
+    }
+
+    if (domainExercise.createdBy !== null && domainExercise.createdBy !== coachId) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'No tenés acceso a este ejercicio',
+      });
+    }
 
     // Auto-asignar order_index si no se provee
     let orderIndex = dto.order_index;
