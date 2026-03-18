@@ -10,6 +10,7 @@ import { WorkoutSession } from './entities/workout-session.entity';
 import { WorkoutLog } from './entities/workout-log.entity';
 import { WorkoutSet } from './entities/workout-set.entity';
 import { Athlete } from '../users/athlete.entity';
+import { Exercise } from '../exercises/exercise.entity';
 import { PlanAssignment } from '../plans/entities/plan-assignment.entity';
 import { TrainingDay } from '../plans/entities/training-day.entity';
 import { TrainingPlan } from '../plans/entities/training-plan.entity';
@@ -49,6 +50,8 @@ export class WorkoutsService {
     private readonly logRepo: Repository<WorkoutLog>,
     @InjectRepository(Athlete)
     private readonly athleteRepo: Repository<Athlete>,
+    @InjectRepository(Exercise)
+    private readonly exerciseRepo: Repository<Exercise>,
     @InjectRepository(PlanAssignment)
     private readonly assignmentRepo: Repository<PlanAssignment>,
     @InjectRepository(TrainingDay)
@@ -145,13 +148,32 @@ export class WorkoutsService {
 
   async createSession(userId: string, dto: CreateSessionDto): Promise<WorkoutSession> {
     const athlete = await this.resolveAthlete(userId);
+    let assignment: PlanAssignment | null = null;
 
     if (dto.planAssignmentId) {
-      const assignment = await this.assignmentRepo.findOne({
+      assignment = await this.assignmentRepo.findOne({
         where: { id: dto.planAssignmentId },
       });
       if (!assignment) throw new NotFoundException('Asignación no encontrada');
       assertOwnership(assignment.athleteId, athlete.id);
+      if (assignment.status !== 'active') {
+        throw new BadRequestException('Solo se puede iniciar una sesión con una asignación activa');
+      }
+    }
+
+    if (dto.trainingDayId) {
+      if (!assignment) {
+        throw new BadRequestException('trainingDayId requiere una asignación de plan válida');
+      }
+
+      const trainingDay = await this.dayRepo.findOne({
+        where: { id: dto.trainingDayId, planId: assignment.planId },
+      });
+
+      // ADDED: validate trainingDay belongs to assignment plan
+      if (!trainingDay) {
+        throw new BadRequestException('El día de entrenamiento no pertenece al plan asignado');
+      }
     }
 
     const session = this.sessionRepo.create({
@@ -222,8 +244,16 @@ export class WorkoutsService {
     if (!session) throw new NotFoundException('Sesión no encontrada');
     assertOwnership(session.athleteId, athlete.id);
 
+    const exerciseExists = await this.exerciseRepo.exist({ where: { id: dto.exerciseId } });
+    if (!exerciseExists) throw new NotFoundException('Ejercicio no encontrado');
+
     if (session.status !== 'in_progress') {
       throw new BadRequestException('Solo se puede registrar ejercicios en una sesión activa');
+    }
+
+    if (dto.trainingDayId && dto.trainingDayId !== session.trainingDayId) {
+      // ADDED: validate log trainingDay matches session trainingDay
+      throw new BadRequestException('El trainingDay del log no coincide con el de la sesión');
     }
 
     return this.dataSource.transaction(async (manager) => {

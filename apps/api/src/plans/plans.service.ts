@@ -256,6 +256,7 @@ export class PlansService {
       throw new NotFoundException({ error: 'NOT_FOUND', message: 'Ejercicio no encontrado' });
     }
 
+    // ADDED: validate exercise belongs to coach or is global
     if (domainExercise.createdBy !== null && domainExercise.createdBy !== coachId) {
       throw new ForbiddenException({
         error: 'FORBIDDEN',
@@ -296,8 +297,12 @@ export class PlansService {
     userId: string,
   ): Promise<PlanDayExercise> {
     await this.findOnePlan(planId, userId);
+    // ADDED: validate trainingDay belongs to plan
+    const day = await this.dayRepo.findOne({ where: { id: dayId, planId } });
+    if (!day) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Día no encontrado' });
+
     const ex = await this.exerciseRepo.findOne({
-      where: { id: exId, trainingDayId: dayId },
+      where: { id: exId, trainingDayId: day.id },
       relations: ['exercise'],
     });
     if (!ex) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Ejercicio no encontrado en el día' });
@@ -319,8 +324,12 @@ export class PlansService {
     userId: string,
   ): Promise<void> {
     await this.findOnePlan(planId, userId);
+    // ADDED: validate trainingDay belongs to plan
+    const day = await this.dayRepo.findOne({ where: { id: dayId, planId } });
+    if (!day) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Día no encontrado' });
+
     const ex = await this.exerciseRepo.findOne({
-      where: { id: exId, trainingDayId: dayId },
+      where: { id: exId, trainingDayId: day.id },
     });
     if (!ex) throw new NotFoundException({ error: 'NOT_FOUND', message: 'Ejercicio no encontrado' });
     await this.exerciseRepo.remove(ex);
@@ -393,6 +402,20 @@ export class PlansService {
     });
     if (!assignment) {
       throw new NotFoundException({ error: 'NOT_FOUND', message: 'Asignación no encontrada' });
+    }
+
+    if (dto.status === 'active') {
+      const activeAssignment = await this.assignmentRepo.findOne({
+        where: { athleteId: assignment.athleteId, status: 'active' },
+      });
+
+      // ADDED: enforce single active assignment at service level
+      if (activeAssignment && activeAssignment.id !== assignment.id) {
+        throw new BadRequestException({
+          error: 'PLAN_ALREADY_ACTIVE',
+          message: 'El atleta ya tiene otro plan activo.',
+        });
+      }
     }
 
     if (dto.status !== undefined) assignment.status = dto.status;
