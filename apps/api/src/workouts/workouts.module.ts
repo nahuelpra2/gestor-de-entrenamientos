@@ -10,6 +10,7 @@ import { PlanAssignment } from '../plans/entities/plan-assignment.entity';
 import { TrainingDay } from '../plans/entities/training-day.entity';
 import { TrainingPlan } from '../plans/entities/training-plan.entity';
 import { PlanDayExercise } from '../plans/entities/plan-day-exercise.entity';
+import { Exercise } from '../exercises/exercise.entity';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PlanDayExercise } from '../plans/entities/plan-day-exercise.entity';
       WorkoutLog,
       WorkoutSet,
       Athlete,
+      Exercise,
       PlanAssignment,
       TrainingDay,
       TrainingPlan,

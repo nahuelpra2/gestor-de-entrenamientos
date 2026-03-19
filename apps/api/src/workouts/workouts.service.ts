@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, IsNull } from 'typeorm';
@@ -244,16 +245,29 @@ export class WorkoutsService {
     if (!session) throw new NotFoundException('Sesión no encontrada');
     assertOwnership(session.athleteId, athlete.id);
 
-    const exerciseExists = await this.exerciseRepo.exist({ where: { id: dto.exerciseId } });
-    if (!exerciseExists) throw new NotFoundException('Ejercicio no encontrado');
+    const exercise = await this.exerciseRepo.findOne({ where: { id: dto.exerciseId } });
+    if (!exercise) throw new NotFoundException('Ejercicio no encontrado');
+
+    if (exercise.createdBy !== null && exercise.createdBy !== athlete.coachId) {
+      throw new ForbiddenException('No tenés acceso a este ejercicio');
+    }
 
     if (session.status !== 'in_progress') {
       throw new BadRequestException('Solo se puede registrar ejercicios en una sesión activa');
     }
 
     if (dto.trainingDayId && dto.trainingDayId !== session.trainingDayId) {
-      // ADDED: validate log trainingDay matches session trainingDay
       throw new BadRequestException('El trainingDay del log no coincide con el de la sesión');
+    }
+
+    if (session.trainingDayId) {
+      const prescribedExercise = await this.dayExerciseRepo.findOne({
+        where: { trainingDayId: session.trainingDayId, exerciseId: dto.exerciseId },
+      });
+
+      if (!prescribedExercise) {
+        throw new BadRequestException('El ejercicio no pertenece al día de la sesión');
+      }
     }
 
     return this.dataSource.transaction(async (manager) => {

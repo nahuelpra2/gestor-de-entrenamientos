@@ -231,8 +231,14 @@ export class PlansService {
 
   async findDayExercises(planId: string, dayId: string, userId: string) {
     await this.findOnePlan(planId, userId);
+
+    const day = await this.dayRepo.findOne({ where: { id: dayId, planId } });
+    if (!day) {
+      throw new NotFoundException({ error: 'NOT_FOUND', message: 'Día no encontrado' });
+    }
+
     return this.exerciseRepo.find({
-      where: { trainingDayId: dayId },
+      where: { trainingDayId: day.id },
       relations: ['exercise'],
       order: { orderIndex: 'ASC' },
     });

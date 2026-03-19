@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
@@ -17,6 +17,8 @@ export interface JwtPayload {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     configService: ConfigService,
     @InjectRepository(User)
@@ -34,10 +36,18 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: JwtPayload) {
+    this.logger.debug(
+      `validate() payload received: sub=${payload.sub} role=${payload.role} iss=${payload.iss} aud=${Array.isArray(payload.aud) ? payload.aud.join(',') : payload.aud}`,
+    );
+
     const user = await this.userRepo.findOne({ where: { id: payload.sub } });
     if (!user) {
+      this.logger.warn(`validate() user not found for sub=${payload.sub}`);
       throw new UnauthorizedException('Usuario no encontrado');
     }
+
+    this.logger.debug(`validate() success for userId=${user.id} role=${user.role}`);
+
     // Este objeto queda disponible como request.user en los controllers
     return { id: user.id, email: user.email, role: user.role };
   }
