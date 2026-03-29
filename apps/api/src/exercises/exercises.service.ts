@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { Exercise } from './exercise.entity';
 import { Coach } from '../users/coach.entity';
+import { Athlete } from '../users/athlete.entity';
 import { CreateExerciseDto } from './dto/create-exercise.dto';
 import { UpdateExerciseDto } from './dto/update-exercise.dto';
 import { SearchExercisesDto } from './dto/search-exercises.dto';
@@ -19,6 +20,8 @@ export class ExercisesService {
     private readonly exerciseRepo: Repository<Exercise>,
     @InjectRepository(Coach)
     private readonly coachRepo: Repository<Coach>,
+    @InjectRepository(Athlete)
+    private readonly athleteRepo: Repository<Athlete>,
   ) {}
 
   // ─── Búsqueda / listado ───────────────────────────────────────────────────
@@ -145,6 +148,20 @@ export class ExercisesService {
 
   private async resolveExerciseOwnerId(userId: string): Promise<string> {
     const coach = await this.coachRepo.findOne({ where: { userId } });
-    return coach?.id ?? userId;
+
+    if (coach) {
+      return coach.id;
+    }
+
+    const athlete = await this.athleteRepo.findOne({ where: { userId } });
+
+    if (!athlete) {
+      throw new ForbiddenException({
+        error: 'FORBIDDEN',
+        message: 'Perfil de atleta o coach no encontrado',
+      });
+    }
+
+    return athlete.coachId;
   }
 }
