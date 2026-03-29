@@ -67,8 +67,8 @@ export class WorkoutsController {
   @UseInterceptors(IdempotencyInterceptor)
   @ApiHeader({
     name: 'Idempotency-Key',
-    description: 'UUID para garantizar creación única',
-    required: false,
+    description: 'UUID requerido — garantiza creación única y reintentos offline seguros',
+    required: true,
   })
   @ApiOperation({ summary: 'Iniciar una sesión de entrenamiento' })
   async createSession(
