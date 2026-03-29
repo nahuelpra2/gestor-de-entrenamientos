@@ -309,7 +309,7 @@ Authorization: Bearer <access_token>
 {
   "session_id": "uuid",
   "exercise_id": "uuid",
-  "logged_at": "2026-03-14T09:30:00Z",
+  "logged_at": "2026-03-14T09:30:00Z", // optional, default: now
   "notes": "Último set llegué al fallo",
   "sets": [
     { "set_number": 1, "weight_kg": 80, "reps": 10, "rpe": 7, "is_warmup": false },
@@ -342,6 +342,8 @@ Query params:
   cursor          string   — cursor opaco para siguiente página
   limit           int      — default 20, max 100
   include_sets    boolean  — incluir detalle de sets (default false)
+
+`include_sets=true` agrega `sets` en cada item del historial.
 
 Response 200:
 {

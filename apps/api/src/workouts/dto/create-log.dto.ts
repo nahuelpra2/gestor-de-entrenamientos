@@ -8,29 +8,24 @@ import {
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateSetDto } from './create-set.dto';
 
 export class CreateLogDto {
   @ApiProperty({ description: 'ID de la sesión activa' })
   @IsUUID()
-  workoutSessionId: string;
+  session_id: string;
 
   @ApiProperty({ description: 'ID del ejercicio registrado' })
   @IsUUID()
-  exerciseId: string;
+  exercise_id: string;
 
-  @ApiProperty({ required: false, description: 'ID del training day (denormalizado)' })
-  @IsOptional()
-  @IsUUID()
-  trainingDayId?: string;
-
-  @ApiProperty({ required: false, description: 'Timestamp del log. Default: ahora' })
+  @ApiPropertyOptional({ description: 'Timestamp del log. Default: ahora' })
   @IsOptional()
   @IsDateString()
-  loggedAt?: string;
+  logged_at?: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   notes?: string;

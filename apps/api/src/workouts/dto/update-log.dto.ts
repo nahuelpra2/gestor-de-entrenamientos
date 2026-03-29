@@ -7,7 +7,7 @@ import {
   ArrayMinSize,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CreateSetDto } from './create-set.dto';
 
 export class UpdateLogDto {
@@ -15,14 +15,14 @@ export class UpdateLogDto {
     description: 'Timestamp de cuándo el cliente cargó el log (para conflict detection)',
   })
   @IsDateString()
-  clientUpdatedAt: string;
+  client_updated_at: string;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   notes?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     required: false,
     type: [CreateSetDto],
     description: 'Reemplaza todos los sets del log',

@@ -6,7 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, IsNull } from 'typeorm';
+import { Repository, DataSource, IsNull, In } from 'typeorm';
 import { WorkoutSession } from './entities/workout-session.entity';
 import { WorkoutLog } from './entities/workout-log.entity';
 import { WorkoutSet } from './entities/workout-set.entity';
@@ -22,7 +22,39 @@ import { CreateLogDto } from './dto/create-log.dto';
 import { UpdateLogDto } from './dto/update-log.dto';
 import { LogHistoryQueryDto } from './dto/log-history-query.dto';
 import { assertOwnership } from '../common/utils/ownership.util';
-import { buildPaginatedResponse, decodeCursor } from '../common/utils/cursor.util';
+import { decodeCursor, encodeCursor } from '../common/utils/cursor.util';
+
+type PublicLogSet = {
+  id: string;
+  set_number: number;
+  weight_kg: number | null;
+  reps: number | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  rpe: number | null;
+  is_warmup: boolean;
+  is_failure: boolean;
+  notes: string | null;
+};
+
+type PublicLogDetail = {
+  id: string;
+  session_id: string;
+  exercise_id: string;
+  logged_at: string;
+  total_volume: number;
+  notes: string | null;
+  sets: PublicLogSet[];
+};
+
+type PublicLogHistoryItem = {
+  id: string;
+  exercise: { id: string; name: string };
+  logged_at: string;
+  total_volume: number;
+  sets_count: number;
+  sets?: PublicLogSet[];
+};
 
 // ─── Tipos de respuesta del algoritmo "Día de Hoy" ───────────────────────────
 
@@ -247,14 +279,14 @@ export class WorkoutsService {
 
   // ─── Logs ─────────────────────────────────────────────────────────────────
 
-  async createLog(userId: string, dto: CreateLogDto): Promise<WorkoutLog> {
+  async createLog(userId: string, dto: CreateLogDto): Promise<PublicLogDetail> {
     const athlete = await this.resolveAthlete(userId);
 
-    const session = await this.sessionRepo.findOne({ where: { id: dto.workoutSessionId } });
+    const session = await this.sessionRepo.findOne({ where: { id: dto.session_id } });
     if (!session) throw new NotFoundException('Sesión no encontrada');
     assertOwnership(session.athleteId, athlete.id);
 
-    const exercise = await this.exerciseRepo.findOne({ where: { id: dto.exerciseId } });
+    const exercise = await this.exerciseRepo.findOne({ where: { id: dto.exercise_id } });
     if (!exercise) throw new NotFoundException('Ejercicio no encontrado');
 
     if (exercise.createdBy !== null && exercise.createdBy !== athlete.coachId) {
@@ -265,13 +297,9 @@ export class WorkoutsService {
       throw new BadRequestException('Solo se puede registrar ejercicios en una sesión activa');
     }
 
-    if (dto.trainingDayId && dto.trainingDayId !== session.trainingDayId) {
-      throw new BadRequestException('El trainingDay del log no coincide con el de la sesión');
-    }
-
     if (session.trainingDayId) {
       const prescribedExercise = await this.dayExerciseRepo.findOne({
-        where: { trainingDayId: session.trainingDayId, exerciseId: dto.exerciseId },
+        where: { trainingDayId: session.trainingDayId, exerciseId: dto.exercise_id },
       });
 
       if (!prescribedExercise) {
@@ -279,13 +307,13 @@ export class WorkoutsService {
       }
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const log = await this.dataSource.transaction(async (manager) => {
       const log = manager.create(WorkoutLog, {
-        workoutSessionId: dto.workoutSessionId,
+        workoutSessionId: dto.session_id,
         athleteId: athlete.id,
-        exerciseId: dto.exerciseId,
+        exerciseId: dto.exercise_id,
         trainingDayId: session.trainingDayId ?? null,
-        loggedAt: dto.loggedAt ? new Date(dto.loggedAt) : new Date(),
+        loggedAt: dto.logged_at ? new Date(dto.logged_at) : new Date(),
         notes: dto.notes ?? null,
       });
 
@@ -294,14 +322,14 @@ export class WorkoutsService {
       const sets = dto.sets.map((s) =>
         manager.create(WorkoutSet, {
           workoutLogId: savedLog.id,
-          setNumber: s.setNumber,
-          weightKg: s.weightKg ?? null,
+          setNumber: s.set_number,
+          weightKg: s.weight_kg ?? null,
           reps: s.reps ?? null,
-          durationSeconds: s.durationSeconds ?? null,
-          distanceMeters: s.distanceMeters ?? null,
+          durationSeconds: s.duration_seconds ?? null,
+          distanceMeters: s.distance_meters ?? null,
           rpe: s.rpe ?? null,
-          isWarmup: s.isWarmup ?? false,
-          isFailure: s.isFailure ?? false,
+          isWarmup: s.is_warmup ?? false,
+          isFailure: s.is_failure ?? false,
           notes: s.notes ?? null,
         }),
       );
@@ -313,9 +341,11 @@ export class WorkoutsService {
         relations: ['sets'],
       });
     });
+
+    return this.toPublicLogDetail(log);
   }
 
-  async getLog(logId: string, userId: string): Promise<WorkoutLog> {
+  async getLog(logId: string, userId: string): Promise<PublicLogDetail> {
     const athlete = await this.resolveAthlete(userId);
     const log = await this.logRepo.findOne({
       where: { id: logId, deletedAt: IsNull() },
@@ -323,10 +353,10 @@ export class WorkoutsService {
     });
     if (!log) throw new NotFoundException('Log no encontrado');
     assertOwnership(log.athleteId, athlete.id);
-    return log;
+    return this.toPublicLogDetail(log);
   }
 
-  async updateLog(logId: string, userId: string, dto: UpdateLogDto): Promise<WorkoutLog> {
+  async updateLog(logId: string, userId: string, dto: UpdateLogDto): Promise<PublicLogDetail> {
     const athlete = await this.resolveAthlete(userId);
     const log = await this.logRepo.findOne({
       where: { id: logId, deletedAt: IsNull() },
@@ -336,17 +366,19 @@ export class WorkoutsService {
     assertOwnership(log.athleteId, athlete.id);
 
     // Conflict detection con optimistic concurrency
-    const clientUpdatedAt = new Date(dto.clientUpdatedAt);
+    const clientUpdatedAt = new Date(dto.client_updated_at);
     if (log.updatedAt > clientUpdatedAt) {
       throw new ConflictException({
         error: 'CONFLICT',
-        message: 'El log fue modificado por otro dispositivo',
-        serverVersion: log,
-        clientUpdatedAt: dto.clientUpdatedAt,
+        message: 'El log fue modificado después de que lo cargaste',
+        details: {
+          server_version: this.toPublicLogDetail(log),
+          client_version: this.toPublicLogPatch(dto),
+        },
       });
     }
 
-    return this.dataSource.transaction(async (manager) => {
+    const updatedLog = await this.dataSource.transaction(async (manager) => {
       if (dto.notes !== undefined) log.notes = dto.notes;
 
       if (dto.sets !== undefined) {
@@ -355,14 +387,14 @@ export class WorkoutsService {
         const newSets = dto.sets.map((s) =>
           manager.create(WorkoutSet, {
             workoutLogId: log.id,
-            setNumber: s.setNumber,
-            weightKg: s.weightKg ?? null,
+            setNumber: s.set_number,
+            weightKg: s.weight_kg ?? null,
             reps: s.reps ?? null,
-            durationSeconds: s.durationSeconds ?? null,
-            distanceMeters: s.distanceMeters ?? null,
+            durationSeconds: s.duration_seconds ?? null,
+            distanceMeters: s.distance_meters ?? null,
             rpe: s.rpe ?? null,
-            isWarmup: s.isWarmup ?? false,
-            isFailure: s.isFailure ?? false,
+            isWarmup: s.is_warmup ?? false,
+            isFailure: s.is_failure ?? false,
             notes: s.notes ?? null,
           }),
         );
@@ -376,6 +408,8 @@ export class WorkoutsService {
         relations: ['sets'],
       });
     });
+
+    return this.toPublicLogDetail(updatedLog);
   }
 
   async deleteLog(logId: string, userId: string): Promise<void> {
@@ -402,16 +436,11 @@ export class WorkoutsService {
       .addOrderBy('log.id', 'DESC')
       .take(limit + 1);
 
-    if (query.exerciseId) {
-      qb.andWhere('log.exercise_id = :exerciseId', { exerciseId: query.exerciseId });
+    if (query.exercise_id) {
+      qb.andWhere('log.exercise_id = :exerciseId', { exerciseId: query.exercise_id });
     }
-    if (query.sessionId) {
-      qb.andWhere('log.workout_session_id = :sessionId', { sessionId: query.sessionId });
-    }
-    if (query.trainingDayId) {
-      qb.andWhere('log.training_day_id = :trainingDayId', {
-        trainingDayId: query.trainingDayId,
-      });
+    if (query.session_id) {
+      qb.andWhere('log.workout_session_id = :sessionId', { sessionId: query.session_id });
     }
     if (query.from) {
       qb.andWhere('log.logged_at >= :from', { from: query.from });
@@ -419,10 +448,6 @@ export class WorkoutsService {
     if (query.to) {
       qb.andWhere('log.logged_at <= :to', { to: query.to });
     }
-    if (query.includeSets) {
-      qb.leftJoinAndSelect('log.sets', 'set');
-    }
-
     if (query.cursor) {
       const decoded = decodeCursor(query.cursor);
       if (decoded) {
@@ -434,14 +459,129 @@ export class WorkoutsService {
     }
 
     const items = await qb.getMany();
+    const pageItems = items.slice(0, limit);
+    const hasMore = items.length > limit;
 
-    return buildPaginatedResponse(items, limit, (log) => ({
-      loggedAt: log.loggedAt.toISOString(),
-      id: log.id,
-    }));
+    const logIds = pageItems.map((log) => log.id);
+    const exerciseIds = [...new Set(pageItems.map((log) => log.exerciseId))];
+
+    const [sets, exercises] = await Promise.all([
+      logIds.length
+        ? this.dataSource.getRepository(WorkoutSet).find({
+            where: { workoutLogId: In(logIds) },
+            order: { workoutLogId: 'ASC', setNumber: 'ASC' },
+          })
+        : Promise.resolve([] as WorkoutSet[]),
+      exerciseIds.length
+        ? this.exerciseRepo.find({
+            where: { id: In(exerciseIds) },
+          })
+        : Promise.resolve([] as Exercise[]),
+    ]);
+
+    const setsByLogId = new Map<string, WorkoutSet[]>();
+    for (const set of sets) {
+      const current = setsByLogId.get(set.workoutLogId) ?? [];
+      current.push(set);
+      setsByLogId.set(set.workoutLogId, current);
+    }
+
+    const exerciseById = new Map(exercises.map((exercise) => [exercise.id, exercise] as const));
+
+    const data: PublicLogHistoryItem[] = pageItems.map((log) => {
+      const logSets = setsByLogId.get(log.id) ?? [];
+      const publicSets = logSets.map((set) => this.toPublicSet(set));
+
+      return {
+        id: log.id,
+        exercise: {
+          id: log.exerciseId,
+          name: exerciseById.get(log.exerciseId)?.name ?? '',
+        },
+        logged_at: log.loggedAt.toISOString(),
+        total_volume: this.calculateTotalVolume(logSets),
+        sets_count: logSets.length,
+        ...(query.include_sets ? { sets: publicSets } : {}),
+      };
+    });
+
+    const lastItem = pageItems[pageItems.length - 1];
+
+    return {
+      data,
+      pagination: {
+        cursor:
+          hasMore && lastItem
+            ? encodeCursor({ loggedAt: lastItem.loggedAt.toISOString(), id: lastItem.id })
+            : null,
+        has_more: hasMore,
+        count: data.length,
+      },
+    };
   }
 
   // ─── Helpers privados ─────────────────────────────────────────────────────
+
+  private toPublicSet(set: WorkoutSet): PublicLogSet {
+    return {
+      id: set.id,
+      set_number: set.setNumber,
+      weight_kg: set.weightKg,
+      reps: set.reps,
+      duration_seconds: set.durationSeconds,
+      distance_meters: set.distanceMeters,
+      rpe: set.rpe,
+      is_warmup: set.isWarmup,
+      is_failure: set.isFailure,
+      notes: set.notes,
+    };
+  }
+
+  private toPublicLogDetail(log: WorkoutLog): PublicLogDetail {
+    const sets = [...(log.sets ?? [])].sort((a, b) => a.setNumber - b.setNumber);
+
+    return {
+      id: log.id,
+      session_id: log.workoutSessionId,
+      exercise_id: log.exerciseId,
+      logged_at: log.loggedAt.toISOString(),
+      total_volume: this.calculateTotalVolume(sets),
+      notes: log.notes,
+      sets: sets.map((set) => this.toPublicSet(set)),
+    };
+  }
+
+  private toPublicLogPatch(dto: UpdateLogDto) {
+    return {
+      client_updated_at: dto.client_updated_at,
+      ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+      ...(dto.sets !== undefined
+        ? {
+            sets: dto.sets.map((set) => ({
+              set_number: set.set_number,
+              weight_kg: set.weight_kg ?? null,
+              reps: set.reps ?? null,
+              duration_seconds: set.duration_seconds ?? null,
+              distance_meters: set.distance_meters ?? null,
+              rpe: set.rpe ?? null,
+              is_warmup: set.is_warmup ?? false,
+              is_failure: set.is_failure ?? false,
+              notes: set.notes ?? null,
+            })),
+          }
+        : {}),
+    };
+  }
+
+  private calculateTotalVolume(sets: Array<{ weightKg: number | null; reps: number | null }>) {
+    return sets.reduce((total, set) => {
+      if (set.weightKg === null || set.reps === null) {
+        return total;
+      }
+
+      return total + set.weightKg * set.reps;
+    }, 0);
+  }
 
   /** Retorna la fecha local del atleta como medianoche UTC (para comparar rangos) */
   private getLocalDate(timezone: string): Date {

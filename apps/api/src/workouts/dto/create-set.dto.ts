@@ -8,56 +8,56 @@ import {
   Max,
   IsPositive,
 } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSetDto {
   @ApiProperty({ description: 'Número de set (1, 2, 3...)' })
   @IsInt()
   @IsPositive()
-  setNumber: number;
+  set_number: number;
 
-  @ApiProperty({ required: false, description: 'Peso en kg' })
+  @ApiPropertyOptional({ description: 'Peso en kg' })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  weightKg?: number;
+  weight_kg?: number;
 
-  @ApiProperty({ required: false, description: 'Repeticiones' })
+  @ApiPropertyOptional({ description: 'Repeticiones' })
   @IsOptional()
   @IsInt()
   @Min(0)
   reps?: number;
 
-  @ApiProperty({ required: false, description: 'Duración en segundos' })
+  @ApiPropertyOptional({ description: 'Duración en segundos' })
   @IsOptional()
   @IsInt()
   @Min(1)
-  durationSeconds?: number;
+  duration_seconds?: number;
 
-  @ApiProperty({ required: false, description: 'Distancia en metros' })
+  @ApiPropertyOptional({ description: 'Distancia en metros' })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
-  distanceMeters?: number;
+  distance_meters?: number;
 
-  @ApiProperty({ required: false, description: 'RPE 1–10' })
+  @ApiPropertyOptional({ description: 'RPE 1–10' })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 1 })
   @Min(1)
   @Max(10)
   rpe?: number;
 
-  @ApiProperty({ required: false, default: false })
+  @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
-  isWarmup?: boolean;
+  is_warmup?: boolean;
 
-  @ApiProperty({ required: false, default: false, description: 'Set hasta el fallo' })
+  @ApiPropertyOptional({ default: false, description: 'Set hasta el fallo' })
   @IsOptional()
   @IsBoolean()
-  isFailure?: boolean;
+  is_failure?: boolean;
 
-  @ApiProperty({ required: false })
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   notes?: string;

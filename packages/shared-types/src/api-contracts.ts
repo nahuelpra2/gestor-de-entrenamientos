@@ -1,9 +1,6 @@
 // Contratos de request/response de la API
 
-import {
-  WorkoutSet,
-  AssignmentStatus,
-} from './domain';
+import { AssignmentStatus } from './domain';
 
 // --- Respuestas genéricas ---
 
@@ -172,7 +169,7 @@ export interface SetInput {
 export interface CreateLogRequest {
   session_id: string;
   exercise_id: string;
-  logged_at: string; // ISO8601
+  logged_at?: string; // ISO8601
   notes?: string;
   sets: SetInput[];
 }
@@ -183,6 +180,19 @@ export interface UpdateLogRequest {
   sets?: SetInput[];
 }
 
+export interface WorkoutLogSet {
+  id: string;
+  set_number: number;
+  weight_kg: number | null;
+  reps: number | null;
+  duration_seconds: number | null;
+  distance_meters: number | null;
+  rpe: number | null;
+  is_warmup: boolean;
+  is_failure: boolean;
+  notes: string | null;
+}
+
 export interface WorkoutLogWithSets {
   id: string;
   session_id: string;
@@ -190,8 +200,22 @@ export interface WorkoutLogWithSets {
   logged_at: string;
   total_volume: number;
   notes: string | null;
-  sets: WorkoutSet[];
+  sets: WorkoutLogSet[];
 }
+
+export interface WorkoutLogHistoryItem {
+  id: string;
+  exercise: {
+    id: string;
+    name: string;
+  };
+  logged_at: string;
+  total_volume: number;
+  sets_count: number;
+  sets?: WorkoutLogSet[];
+}
+
+export type LogsHistoryResponse = PaginatedResponse<WorkoutLogHistoryItem>;
 
 // --- Measurements ---
 
@@ -218,7 +242,6 @@ export interface ExerciseSearchParams {
 export interface LogsHistoryParams {
   exercise_id?: string;
   session_id?: string;
-  training_day_id?: string;
   from?: string;
   to?: string;
   cursor?: string;
