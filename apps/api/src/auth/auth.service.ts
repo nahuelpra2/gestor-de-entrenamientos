@@ -105,49 +105,52 @@ export class AuthService {
   ) {
     const tokenHash = this.hashToken(rawToken);
 
-    const existing = await this.refreshTokenRepo.findOne({
-      where: { tokenHash },
-      relations: ['user'],
-    });
-
-    if (!existing) {
-      throw new UnauthorizedException({
-        error: 'UNAUTHORIZED',
-        message: 'Token inválido',
-      });
-    }
-
-    // Detectar reuso de token revocado → posible robo de credenciales
-    if (existing.revokedAt !== null) {
-      // Revocar toda la familia de tokens como medida de seguridad
-      await this.refreshTokenRepo
-        .createQueryBuilder()
-        .update()
-        .set({ revokedAt: new Date() })
-        .where('family_id = :familyId AND revoked_at IS NULL', {
-          familyId: existing.familyId,
-        })
-        .execute();
-
-      throw new UnauthorizedException({
-        error: 'TOKEN_REUSE',
-        message: 'Sesión inválida. Por seguridad, inicia sesión nuevamente.',
-      });
-    }
-
-    if (existing.expiresAt < new Date()) {
-      throw new UnauthorizedException({
-        error: 'UNAUTHORIZED',
-        message: 'Token expirado',
-      });
-    }
-
-    // Rotar: revocar actual y generar nuevo par
-    const newRawToken = this.generateOpaqueToken();
-    const newTokenHash = this.hashToken(newRawToken);
-    const expiresAt = this.getRefreshExpiry();
-
     return this.dataSource.transaction(async (manager) => {
+      const existing = await manager
+        .getRepository(RefreshToken)
+        .createQueryBuilder('refreshToken')
+        .leftJoinAndSelect('refreshToken.user', 'user')
+        .setLock('pessimistic_write')
+        .where('refreshToken.tokenHash = :tokenHash', { tokenHash })
+        .getOne();
+
+      if (!existing) {
+        throw new UnauthorizedException({
+          error: 'UNAUTHORIZED',
+          message: 'Token inválido',
+        });
+      }
+
+      // Detectar reuso de token revocado → posible robo de credenciales
+      if (existing.revokedAt !== null) {
+        // Revocar toda la familia de tokens como medida de seguridad
+        await manager
+          .createQueryBuilder()
+          .update(RefreshToken)
+          .set({ revokedAt: new Date() })
+          .where('family_id = :familyId AND revoked_at IS NULL', {
+            familyId: existing.familyId,
+          })
+          .execute();
+
+        throw new UnauthorizedException({
+          error: 'TOKEN_REUSE',
+          message: 'Sesión inválida. Por seguridad, inicia sesión nuevamente.',
+        });
+      }
+
+      if (existing.expiresAt < new Date()) {
+        throw new UnauthorizedException({
+          error: 'UNAUTHORIZED',
+          message: 'Token expirado',
+        });
+      }
+
+      // Rotar: revocar actual y generar nuevo par
+      const newRawToken = this.generateOpaqueToken();
+      const newTokenHash = this.hashToken(newRawToken);
+      const expiresAt = this.getRefreshExpiry();
+
       const newToken = manager.create(RefreshToken, {
         userId: existing.userId,
         tokenHash: newTokenHash,
