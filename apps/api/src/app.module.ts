@@ -11,6 +11,7 @@ import { ExercisesModule } from './exercises/exercises.module';
 import { AthletesModule } from './athletes/athletes.module';
 import { PlansModule } from './plans/plans.module';
 import { WorkoutsModule } from './workouts/workouts.module';
+import { MeasurementsModule } from './measurements/measurements.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { WorkoutsModule } from './workouts/workouts.module';
     AuthModule,
     ExercisesModule,
     AthletesModule,
+    MeasurementsModule,
     PlansModule,
     WorkoutsModule,
   ],

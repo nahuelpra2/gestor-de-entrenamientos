@@ -424,21 +424,16 @@ Response 200:
   "measured_at": "2026-03-14T08:00:00Z",
   "weight_kg": 82.5,
   "body_fat_pct": 18.2,
+  "muscle_mass_kg": 39.6,
   "notes": "En ayunas"
 }
 
 // Response 201
-{ "data": { "id": "uuid", "measured_at": "...", "weight_kg": 82.5, ... } }
+{ "data": { "id": "uuid", "measured_at": "...", "weight_kg": 82.5, "body_fat_pct": 18.2, "muscle_mass_kg": 39.6, "notes": "En ayunas", "source": "manual" } }
 ```
 
 ### GET /athletes/me/measurements
 ```
-Query params:
-  from    ISO8601
-  to      ISO8601
-  cursor  string
-  limit   int
-
 Response 200:
 {
   "data": [
@@ -446,9 +441,11 @@ Response 200:
       "id": "uuid",
       "measured_at": "2026-03-14T08:00:00Z",
       "weight_kg": 82.5,
-      "body_fat_pct": 18.2
+      "body_fat_pct": 18.2,
+      "muscle_mass_kg": 39.6,
+      "notes": "En ayunas",
+      "source": "manual"
     }
-  ],
-  "pagination": { ... }
+  ]
 }
 ```
