@@ -274,12 +274,12 @@ Ver [ALGORITHMS.md](./ALGORITHMS.md) para pseudocódigo completo.
 
 ```typescript
 type TodayResponse =
-  | { status: 'no_plan' }
-  | { status: 'rest_day'; next_training_day: TrainingDay }
-  | { status: 'plan_completed'; summary: PlanSummary }
+  | { status: 'no_plan'; startsAt?: string }
+  | { status: 'rest_day'; nextTrainingDay: TrainingDay | null }
+  | { status: 'plan_completed'; assignmentId: string }
   | { status: 'already_done'; session: WorkoutSession }
-  | { status: 'pending'; training_day: TrainingDayWithExercises; session: null }
-  | { status: 'in_progress'; training_day: TrainingDayWithExercises; session: WorkoutSession }
+  | { status: 'pending'; trainingDay: TrainingDayWithExercises; session: null }
+  | { status: 'in_progress'; trainingDay: TrainingDayWithExercises; session: WorkoutSession }
 ```
 
 Pasos:

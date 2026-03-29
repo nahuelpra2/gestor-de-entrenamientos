@@ -34,7 +34,7 @@ FUNCIÓN calcular_dia_hoy(athlete_id, hoy = now().date()):
 
    SI dias_desde_inicio < 0:
      -- El plan comienza en el futuro
-     RETORNAR { status: 'no_plan', starts_at: assignment.start_date }
+     RETORNAR { status: 'no_plan', startsAt: assignment.start_date }
 
    week_number = FLOOR(dias_desde_inicio / 7) + 1
 
@@ -47,10 +47,10 @@ FUNCIÓN calcular_dia_hoy(athlete_id, hoy = now().date()):
        week_number = ((week_number - 1) % plan.cycle_weeks) + 1
      SINO:
        -- Plan completado
-       RETORNAR {
-         status: 'plan_completed',
-         summary: calcular_resumen_plan(assignment)
-       }
+        RETORNAR {
+          status: 'plan_completed',
+          assignmentId: assignment.id
+        }
 
 4. CALCULAR DÍA DE LA SEMANA
    ───────────────────────────
@@ -66,7 +66,7 @@ FUNCIÓN calcular_dia_hoy(athlete_id, hoy = now().date()):
    SI training_day IS NULL OR training_day.is_rest_day = true:
      -- No hay entrenamiento programado hoy
      next = calcular_proximo_dia(plan, week_number, day_of_week)
-     RETORNAR { status: 'rest_day', next_training_day: next }
+      RETORNAR { status: 'rest_day', nextTrainingDay: next }
 
 6. VERIFICAR SESIÓN EXISTENTE
    ────────────────────────────
@@ -84,7 +84,7 @@ FUNCIÓN calcular_dia_hoy(athlete_id, hoy = now().date()):
        training_day_with_exercises = cargar_ejercicios(training_day)
        RETORNAR {
          status: 'in_progress',
-         training_day: training_day_with_exercises,
+          trainingDay: training_day_with_exercises,
          session: session
        }
      -- Si 'abandoned', lo tratamos como si no existe
@@ -94,7 +94,7 @@ FUNCIÓN calcular_dia_hoy(athlete_id, hoy = now().date()):
    training_day_with_exercises = cargar_ejercicios(training_day)
    RETORNAR {
      status: 'pending',
-     training_day: training_day_with_exercises,
+      trainingDay: training_day_with_exercises,
      session: null
    }
 ```

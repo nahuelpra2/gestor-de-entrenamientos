@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { apiClient } from './src/api/client';
+import type { TodayResponse } from './src/types/api.types';
 import { useAuthStore } from './src/stores/auth.store';
 
 type LoginApiResponse = {
@@ -23,29 +24,6 @@ type LoginApiResponse = {
     };
   };
 };
-
-type TodayResponse =
-  | { status: 'no_plan'; startsAt?: string }
-  | { status: 'rest_day'; nextTrainingDay: { id: string; name: string | null } | null }
-  | { status: 'plan_completed'; assignmentId: string }
-  | { status: 'already_done'; session: { id: string; status: string } }
-  | {
-      status: 'pending' | 'in_progress';
-      trainingDay: {
-        id: string;
-        name: string | null;
-        exercises: Array<{
-          id: string;
-          setsTarget: number;
-          repsTarget: string;
-          exercise: {
-            id: string;
-            name: string;
-          };
-        }>;
-      };
-      session: { id: string; status: string } | null;
-    };
 
 export default function App() {
   const { accessToken, userRole, hasHydrated, setSession, clearSession } = useAuthStore();

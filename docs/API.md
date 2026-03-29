@@ -118,26 +118,38 @@ Authorization: Bearer <access_token>
 {
   "data": {
     "status": "pending",
-    "training_day": {
+    "trainingDay": {
       "id": "uuid",
-      "week_number": 3,
-      "day_of_week": 1,
+      "planId": "uuid",
+      "weekNumber": 3,
+      "dayOfWeek": 1,
       "name": "Piernas",
+      "orderIndex": 0,
+      "isRestDay": false,
+      "createdAt": "2026-03-14T09:00:00Z",
       "exercises": [
         {
           "id": "uuid",
-          "order_index": 1,
-          "sets_target": 4,
-          "reps_target": "8-10",
-          "weight_target": "70% 1RM",
-          "rest_seconds": 180,
+          "trainingDayId": "uuid",
+          "exerciseId": "uuid",
+          "orderIndex": 1,
+          "setsTarget": 4,
+          "repsTarget": "8-10",
+          "weightTarget": "70% 1RM",
+          "restSeconds": 180,
+          "notes": null,
+          "createdAt": "2026-03-14T09:00:00Z",
+          "updatedAt": "2026-03-14T09:00:00Z",
           "exercise": {
             "id": "uuid",
             "name": "Sentadilla",
             "category": "strength",
-            "muscle_groups": ["quadriceps", "glutes"],
-            "video_url": "https://...",
-            "instructions": "..."
+            "muscleGroups": ["quadriceps", "glutes"],
+            "videoUrl": "https://...",
+            "instructions": "...",
+            "createdBy": null,
+            "createdAt": "2026-03-14T09:00:00Z",
+            "updatedAt": "2026-03-14T09:00:00Z"
           }
         }
       ]
@@ -147,16 +159,21 @@ Authorization: Bearer <access_token>
 }
 
 // Response 200 — sin plan
-{ "data": { "status": "no_plan" } }
+{ "data": { "status": "no_plan", "startsAt": "2026-03-20" } }
 
 // Response 200 — día de descanso
 {
   "data": {
     "status": "rest_day",
-    "next_training_day": {
+    "nextTrainingDay": {
       "id": "uuid",
+      "planId": "uuid",
+      "weekNumber": 3,
+      "dayOfWeek": 3,
       "name": "Empuje",
-      "days_away": 2
+      "orderIndex": 0,
+      "isRestDay": false,
+      "createdAt": "2026-03-14T09:00:00Z"
     }
   }
 }
@@ -167,9 +184,14 @@ Authorization: Bearer <access_token>
     "status": "already_done",
     "session": {
       "id": "uuid",
-      "started_at": "2026-03-14T09:00:00Z",
-      "completed_at": "2026-03-14T10:15:00Z",
-      "perceived_effort": 8
+      "athleteId": "uuid",
+      "planAssignmentId": "uuid",
+      "trainingDayId": "uuid",
+      "startedAt": "2026-03-14T09:00:00Z",
+      "completedAt": "2026-03-14T10:15:00Z",
+      "notes": null,
+      "status": "completed",
+      "perceivedEffort": 8
     }
   }
 }
@@ -178,10 +200,17 @@ Authorization: Bearer <access_token>
 {
   "data": {
     "status": "in_progress",
-    "training_day": { ... },
+    "trainingDay": { ... },
     "session": {
       "id": "uuid",
-      "started_at": "2026-03-14T09:00:00Z"
+      "athleteId": "uuid",
+      "planAssignmentId": "uuid",
+      "trainingDayId": "uuid",
+      "startedAt": "2026-03-14T09:00:00Z",
+      "completedAt": null,
+      "notes": null,
+      "status": "in_progress",
+      "perceivedEffort": null
     }
   }
 }

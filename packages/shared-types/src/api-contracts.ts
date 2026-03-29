@@ -61,44 +61,66 @@ export type TodayStatus =
   | 'pending'
   | 'in_progress';
 
-export interface TrainingDayWithExercises {
+export interface TodayExerciseData {
   id: string;
-  week_number: number;
-  day_of_week: number;
+  name: string;
+  category: string;
+  muscleGroups: string[];
+  videoUrl: string | null;
+  instructions: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TodayPlanDayExercise {
+  id: string;
+  trainingDayId: string;
+  exerciseId: string;
+  orderIndex: number;
+  setsTarget: number;
+  repsTarget: string;
+  weightTarget: string | null;
+  restSeconds: number | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  exercise: TodayExerciseData;
+}
+
+export interface TodayTrainingDay {
+  id: string;
+  planId: string;
+  weekNumber: number;
+  dayOfWeek: number;
   name: string | null;
-  exercises: Array<{
-    id: string;
-    order_index: number;
-    sets_target: number;
-    reps_target: string;
-    weight_target: string | null;
-    rest_seconds: number | null;
-    notes: string | null;
-    exercise: {
-      id: string;
-      name: string;
-      category: string;
-      muscle_groups: string[];
-      video_url: string | null;
-      instructions: string | null;
-    };
-  }>;
+  orderIndex: number;
+  isRestDay: boolean;
+  createdAt: string;
+}
+
+export interface TodayTrainingDayWithExercises extends TodayTrainingDay {
+  exercises: TodayPlanDayExercise[];
 }
 
 export type TodayResponseData =
-  | { status: 'no_plan' }
-  | { status: 'rest_day'; next_training_day: { id: string; name: string | null; days_away: number } }
-  | { status: 'plan_completed'; summary: unknown }
+  | { status: 'no_plan'; startsAt?: string }
+  | { status: 'rest_day'; nextTrainingDay: TodayTrainingDay | null }
+  | { status: 'plan_completed'; assignmentId: string }
   | { status: 'already_done'; session: SessionData }
-  | { status: 'pending'; training_day: TrainingDayWithExercises; session: null }
-  | { status: 'in_progress'; training_day: TrainingDayWithExercises; session: SessionData };
+  | { status: 'pending'; trainingDay: TodayTrainingDayWithExercises; session: null }
+  | { status: 'in_progress'; trainingDay: TodayTrainingDayWithExercises; session: SessionData };
 
 export interface SessionData {
   id: string;
-  started_at: string;
-  completed_at: string | null;
+  athleteId: string;
+  planAssignmentId: string | null;
+  trainingDayId: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  notes: string | null;
   status: 'in_progress' | 'completed' | 'abandoned';
-  perceived_effort: number | null;
+  perceivedEffort: number | null;
 }
 
 // --- Plans ---
