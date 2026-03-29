@@ -5,9 +5,11 @@ import {
   CallHandler,
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
-import { Observable, of } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { Observable, from, of } from 'rxjs';
+import { catchError, map, mergeMap } from 'rxjs/operators';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { Request, Response } from 'express';
@@ -92,6 +94,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       if (existing.length > 0) {
         const { user_id, endpoint: storedEndpoint, response_status, response_body } = existing[0];
         const storedRequestHash = this.extractStoredRequestHash(response_body);
+        const storedError = this.extractStoredError(response_body);
 
         if (user_id !== userId || storedEndpoint !== endpoint || storedRequestHash !== requestHash) {
           throw new ConflictException({
@@ -108,6 +111,14 @@ export class IdempotencyInterceptor implements NestInterceptor {
           return of({ message: 'Operación en curso, reintentá en unos segundos' });
         }
 
+        if (storedError) {
+          response.setHeader('Idempotency-Key-Status', 'hit');
+          throw new HttpException(
+            storedError.response as string | Record<string, any>,
+            storedError.statusCode,
+          );
+        }
+
         response.status(response_status).setHeader('Idempotency-Key-Status', 'hit');
         return of(this.extractStoredResponseBody(response_body));
       }
@@ -120,22 +131,92 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     // PASO 2: El INSERT tuvo éxito — somos los dueños de esta operación
     return next.handle().pipe(
-      tap(async (data) => {
-        const statusCode = response.statusCode;
-        // Actualizar la fila con la respuesta real
-        const storedResponse = JSON.stringify({
-          __request_hash: requestHash,
-          __response: data,
-        });
-        await this.dataSource.query(
-          `UPDATE idempotency_keys
-           SET response_status = $1, response_body = $2::jsonb
-           WHERE key = $3 AND user_id = $4`,
-          [statusCode, storedResponse, idempotencyKey, userId],
-        );
-        response.setHeader('Idempotency-Key-Status', 'miss');
+      mergeMap((data) =>
+        from(this.storeSuccess(idempotencyKey, userId, requestHash, response.statusCode, data)).pipe(
+          map(() => {
+            response.setHeader('Idempotency-Key-Status', 'miss');
+            return data;
+          }),
+        ),
+      ),
+      catchError(async (error) => {
+        try {
+          await this.storeFailure(idempotencyKey, userId, requestHash, error);
+        } catch {
+          // Si la persistencia del marcador falla, priorizamos no ocultar el error original.
+        }
+
+        throw this.toHttpException(error);
       }),
     );
+  }
+
+  private async storeSuccess(
+    idempotencyKey: string,
+    userId: string,
+    requestHash: string,
+    statusCode: number,
+    data: unknown,
+  ) {
+    const storedResponse = JSON.stringify({
+      __request_hash: requestHash,
+      __response: data,
+    });
+
+    await this.dataSource.query(
+      `UPDATE idempotency_keys
+       SET response_status = $1, response_body = $2::jsonb
+       WHERE key = $3 AND user_id = $4`,
+      [statusCode, storedResponse, idempotencyKey, userId],
+    );
+  }
+
+  private async storeFailure(
+    idempotencyKey: string,
+    userId: string,
+    requestHash: string,
+    error: unknown,
+  ) {
+    const failure = this.serializeError(error);
+    const storedResponse = JSON.stringify({
+      __request_hash: requestHash,
+      __error: failure,
+    });
+
+    await this.dataSource.query(
+      `UPDATE idempotency_keys
+       SET response_status = $1, response_body = $2::jsonb
+       WHERE key = $3 AND user_id = $4`,
+      [failure.statusCode, storedResponse, idempotencyKey, userId],
+    );
+  }
+
+  private serializeError(error: unknown): { statusCode: number; response: unknown } {
+    if (error instanceof HttpException) {
+      const statusCode = error.getStatus();
+      const response = error.getResponse();
+
+      return {
+        statusCode,
+        response:
+          typeof response === 'object' && response !== null
+            ? response
+            : { error: error.name, message: String(response) },
+      };
+    }
+
+    return {
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      response: {
+        error: 'INTERNAL_ERROR',
+        message: 'Error interno del servidor',
+      },
+    };
+  }
+
+  private toHttpException(error: unknown): HttpException {
+    const serialized = this.serializeError(error);
+    return new HttpException(serialized.response as string | Record<string, any>, serialized.statusCode);
   }
 
   private hashRequestBody(body: unknown): string {
@@ -163,6 +244,24 @@ export class IdempotencyInterceptor implements NestInterceptor {
   private extractStoredRequestHash(responseBody: unknown): string | null {
     if (responseBody && typeof responseBody === 'object' && '__request_hash' in responseBody) {
       return String((responseBody as Record<string, unknown>).__request_hash);
+    }
+
+    return null;
+  }
+
+  private extractStoredError(responseBody: unknown): { statusCode: number; response: unknown } | null {
+    if (responseBody && typeof responseBody === 'object' && '__error' in responseBody) {
+      const error = (responseBody as Record<string, unknown>).__error as Record<string, unknown>;
+      const statusCode = Number(error.statusCode ?? HttpStatus.INTERNAL_SERVER_ERROR);
+      const response = error.response ?? {
+        error: 'INTERNAL_ERROR',
+        message: 'Error interno del servidor',
+      };
+
+      return {
+        statusCode: Number.isFinite(statusCode) ? statusCode : HttpStatus.INTERNAL_SERVER_ERROR,
+        response,
+      };
     }
 
     return null;

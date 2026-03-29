@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Post, UseGuards, UseInterceptors } from '@nestjs/common';
+import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { IdempotencyInterceptor } from '../common/interceptors/idempotency.interceptor';
 import { CreateMeasurementDto } from './dto/create-measurement.dto';
 import { MeasurementsService } from './measurements.service';
 
@@ -23,6 +24,12 @@ export class MeasurementsController {
   }
 
   @Post()
+  @UseInterceptors(IdempotencyInterceptor)
+  @ApiHeader({
+    name: 'Idempotency-Key',
+    description: 'UUID requerido — garantiza reintentos offline seguros para mediciones',
+    required: true,
+  })
   @ApiOperation({ summary: 'Registrar una nueva medición' })
   async createMyMeasurement(
     @CurrentUser('id') userId: string,

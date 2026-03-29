@@ -419,6 +419,7 @@ Response 200:
 
 ### POST /athletes/me/measurements
 ```json
+// Header: Idempotency-Key: <uuid>
 // Request
 {
   "measured_at": "2026-03-14T08:00:00Z",

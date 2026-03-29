@@ -22,7 +22,7 @@ El usuario nunca debe perder datos de entrenamiento por problemas de red.
 | Completar sesión | `PATCH /sessions/:id/complete` | Sí (idempotente por naturaleza) | |
 | Registrar ejercicio | `POST /logs` | Sí (idempotency key obligatorio) | |
 | Editar log | `PATCH /logs/:id` | Sí (client_updated_at para conflictos) | |
-| Registrar medición | `POST /athletes/me/measurements` | Sí (clave natural: athlete_id + measured_at) | |
+| Registrar medición | `POST /athletes/me/measurements` | Sí (Idempotency-Key obligatorio; respaldo natural: athlete_id + measured_at) | |
 
 ## Operaciones que requieren conexión
 
