@@ -150,6 +150,7 @@ export class WorkoutsService {
   async createSession(userId: string, dto: CreateSessionDto): Promise<WorkoutSession> {
     const athlete = await this.resolveAthlete(userId);
     let assignment: PlanAssignment | null = null;
+    let sessionTrainingDayId: string | null = null;
 
     if (dto.planAssignmentId) {
       assignment = await this.assignmentRepo.findOne({
@@ -159,6 +160,12 @@ export class WorkoutsService {
       assertOwnership(assignment.athleteId, athlete.id);
       if (assignment.status !== 'active') {
         throw new BadRequestException('Solo se puede iniciar una sesión con una asignación activa');
+      }
+
+      if (!dto.trainingDayId) {
+        throw new BadRequestException(
+          'trainingDayId es obligatorio cuando la sesión pertenece a una asignación de plan',
+        );
       }
     }
 
@@ -175,12 +182,14 @@ export class WorkoutsService {
       if (!trainingDay) {
         throw new BadRequestException('El día de entrenamiento no pertenece al plan asignado');
       }
+
+      sessionTrainingDayId = trainingDay.id;
     }
 
     const session = this.sessionRepo.create({
       athleteId: athlete.id,
       planAssignmentId: dto.planAssignmentId ?? null,
-      trainingDayId: dto.trainingDayId ?? null,
+      trainingDayId: sessionTrainingDayId,
       startedAt: dto.startedAt ? new Date(dto.startedAt) : new Date(),
       notes: dto.notes ?? null,
       status: 'in_progress',
@@ -275,7 +284,7 @@ export class WorkoutsService {
         workoutSessionId: dto.workoutSessionId,
         athleteId: athlete.id,
         exerciseId: dto.exerciseId,
-        trainingDayId: dto.trainingDayId ?? null,
+        trainingDayId: session.trainingDayId ?? null,
         loggedAt: dto.loggedAt ? new Date(dto.loggedAt) : new Date(),
         notes: dto.notes ?? null,
       });
