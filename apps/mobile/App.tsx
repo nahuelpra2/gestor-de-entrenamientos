@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,8 +12,12 @@ import {
   View,
 } from 'react-native';
 import { apiClient } from './src/api/client';
-import type { TodayResponse } from './src/types/api.types';
+import { TODAY_QUERY_KEY } from './src/api/today';
+import { getSessionStartBlocker } from './src/api/sessions';
+import { useToday, useTodayActions } from './src/hooks/useToday';
+import { queryClient } from './src/query-client';
 import { useAuthStore } from './src/stores/auth.store';
+import type { CompleteSessionInput, TodayResponse } from './src/types/workout';
 
 type LoginApiResponse = {
   data: {
@@ -25,41 +30,34 @@ type LoginApiResponse = {
   };
 };
 
-export default function App() {
+function AppContent() {
   const { accessToken, userRole, hasHydrated, setSession, clearSession } = useAuthStore();
 
   const [email, setEmail] = useState('atleta.today@example.com');
   const [password, setPassword] = useState('');
-  const [today, setToday] = useState<TodayResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
 
   const isAuthenticated = useMemo(() => Boolean(accessToken), [accessToken]);
-
-  const loadToday = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const response = await apiClient.get<{ data: TodayResponse }>('/athletes/me/today');
-      setToday(response.data.data);
-    } catch (err: any) {
-      const message = err?.response?.data?.message ?? err?.message ?? 'No se pudo cargar el día de hoy';
-      setError(message);
-      setToday(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const todayQuery = useToday(isAuthenticated && userRole === 'athlete');
+  const today = todayQuery.data ?? null;
+  const { startSessionMutation, completeSessionMutation, abandonSessionMutation } = useTodayActions();
+  const sessionStartBlocker = getSessionStartBlocker(todayQuery.data);
 
   useEffect(() => {
-    if (isAuthenticated && userRole === 'athlete') {
-      void loadToday();
-    } else if (isAuthenticated && userRole && userRole !== 'athlete') {
-      setToday(null);
+    if (isAuthenticated && userRole && userRole !== 'athlete') {
       setError('Este corte mobile está preparado solo para atletas.');
     }
-  }, [isAuthenticated, userRole, loadToday]);
+  }, [isAuthenticated, userRole]);
+
+  useEffect(() => {
+    if (todayQuery.error) {
+      const queryError: any = todayQuery.error;
+      const message = queryError?.response?.data?.message ?? queryError?.message ?? 'No se pudo cargar el día de hoy';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    }
+  }, [todayQuery.error]);
 
   const handleLogin = useCallback(async () => {
     setLoading(true);
@@ -90,9 +88,76 @@ export default function App() {
 
   const handleLogout = useCallback(async () => {
     clearSession();
-    setToday(null);
     setError(null);
+    setActionMessage(null);
+    queryClient.removeQueries({ queryKey: TODAY_QUERY_KEY });
   }, [clearSession]);
+
+  const handleStartSession = useCallback(async () => {
+    setError(null);
+    setActionMessage(null);
+
+    if (!today) {
+      return;
+    }
+
+    try {
+      await startSessionMutation.mutateAsync(today);
+      setActionMessage('Sesión iniciada. Today debería pasar de pending a in_progress.');
+    } catch (err: any) {
+      if (err?.response?.status === 409) {
+        await todayQuery.refetch();
+        const resumedToday = queryClient.getQueryData<TodayResponse>(TODAY_QUERY_KEY);
+        setActionMessage(
+          resumedToday?.status === 'in_progress'
+            ? 'Conflicto detectado: se refrescó today y podés reanudar la sesión en progreso.'
+            : 'Conflicto detectado: se refrescó today, pero no apareció una sesión reanudable.',
+        );
+        return;
+      }
+
+      const message = err?.response?.data?.message ?? err?.message ?? 'No se pudo iniciar la sesión';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    }
+  }, [startSessionMutation, today, todayQuery]);
+
+  const handleCompleteSession = useCallback(async () => {
+    if (today?.status !== 'in_progress') {
+      return;
+    }
+
+    setError(null);
+    setActionMessage(null);
+
+    try {
+      const payload: CompleteSessionInput = { completedAt: new Date().toISOString() };
+      await completeSessionMutation.mutateAsync({ sessionId: today.session.id, input: payload });
+      setActionMessage('Sesión completada. Today debería pasar de in_progress a already_done.');
+    } catch (err: any) {
+      const message = err?.response?.data?.message ?? err?.message ?? 'No se pudo completar la sesión';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    }
+  }, [completeSessionMutation, today]);
+
+  const handleAbandonSession = useCallback(async () => {
+    if (today?.status !== 'in_progress') {
+      return;
+    }
+
+    setError(null);
+    setActionMessage(null);
+
+    try {
+      await abandonSessionMutation.mutateAsync(today.session.id);
+      setActionMessage('Sesión abandonada. Today debería volver de in_progress a pending.');
+    } catch (err: any) {
+      const message = err?.response?.data?.message ?? err?.message ?? 'No se pudo abandonar la sesión';
+      setError(Array.isArray(message) ? message.join(', ') : message);
+    }
+  }, [abandonSessionMutation, today]);
+
+  const isTodayLoading = todayQuery.isLoading || todayQuery.isFetching;
+  const isActionLoading = startSessionMutation.isPending || completeSessionMutation.isPending || abandonSessionMutation.isPending;
 
   if (!hasHydrated) {
     return (
@@ -160,10 +225,11 @@ export default function App() {
             <Text style={styles.cardLabel}>Estado</Text>
             <Text style={styles.statusValue}>{today?.status ?? 'sin cargar'}</Text>
 
-            {error ? <Text style={styles.error}>{error}</Text> : null}
+             {error ? <Text style={styles.error}>{error}</Text> : null}
+             {actionMessage ? <Text style={styles.success}>{actionMessage}</Text> : null}
 
-            <Pressable style={styles.primaryButton} onPress={loadToday} disabled={loading}>
-              <Text style={styles.primaryButtonText}>{loading ? 'Actualizando...' : 'Recargar today'}</Text>
+            <Pressable style={styles.primaryButton} onPress={() => void todayQuery.refetch()} disabled={isTodayLoading}>
+              <Text style={styles.primaryButtonText}>{isTodayLoading ? 'Actualizando...' : 'Recargar today'}</Text>
             </Pressable>
           </View>
 
@@ -184,6 +250,41 @@ export default function App() {
                   </View>
                 ))}
               </View>
+
+              {today.status === 'pending' ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardLabel}>Sesión</Text>
+                  <Text style={styles.muted}>Demo esperada: pending -&gt; in_progress</Text>
+                  {sessionStartBlocker ? <Text style={styles.warning}>{sessionStartBlocker}</Text> : null}
+                  <Pressable
+                    style={[styles.primaryButton, sessionStartBlocker ? styles.buttonDisabled : null]}
+                    onPress={handleStartSession}
+                    disabled={Boolean(sessionStartBlocker) || isActionLoading}
+                  >
+                    <Text style={styles.primaryButtonText}>
+                      {isActionLoading ? 'Procesando...' : 'Iniciar sesión'}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              {today.status === 'in_progress' ? (
+                <View style={styles.card}>
+                  <Text style={styles.cardLabel}>Sesión activa</Text>
+                  <Text style={styles.muted}>Sesión: {today.session.id}</Text>
+                  <Text style={styles.muted}>Demo esperada: in_progress -&gt; already_done / pending</Text>
+
+                  <Pressable style={styles.primaryButton} onPress={handleCompleteSession} disabled={isActionLoading}>
+                    <Text style={styles.primaryButtonText}>
+                      {isActionLoading ? 'Procesando...' : 'Completar sesión'}
+                    </Text>
+                  </Pressable>
+
+                  <Pressable style={styles.secondaryButton} onPress={handleAbandonSession} disabled={isActionLoading}>
+                    <Text style={styles.secondaryButtonText}>Abandonar sesión</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </>
           ) : null}
 
@@ -213,12 +314,21 @@ export default function App() {
           {today?.status === 'already_done' ? (
             <View style={styles.card}>
               <Text style={styles.dayName}>Entrenamiento ya realizado</Text>
+              <Text style={styles.muted}>Assignment: {today.assignmentId}</Text>
               <Text style={styles.muted}>Sesión: {today.session.id}</Text>
             </View>
           ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
+    </QueryClientProvider>
   );
 }
 
@@ -328,6 +438,17 @@ const styles = StyleSheet.create({
   error: {
     color: '#9f2d1f',
     lineHeight: 20,
+  },
+  success: {
+    color: '#1e6b5c',
+    lineHeight: 20,
+  },
+  warning: {
+    color: '#8a5a14',
+    lineHeight: 20,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   list: {
     gap: 12,
