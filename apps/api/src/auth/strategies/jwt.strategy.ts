@@ -24,15 +24,23 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
   ) {
+    const secret = configService.get<string>('jwt.secret');
+    const issuer = configService.get<string>('jwt.issuer') ?? 'trainr-api';
+    const audience = configService.get<string>('jwt.audience') ?? 'trainr-app';
+
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('jwt.secret')!,
+      secretOrKey: secret!,
       // Validar issuer y audience en cada token
       // Previene que JWTs de otros servicios firmados con el mismo secreto sean aceptados
-      issuer: configService.get<string>('jwt.issuer'),
-      audience: configService.get<string>('jwt.audience'),
+      issuer,
+      audience,
     });
+
+    this.logger.debug(
+      `constructor() jwt config loaded: secret=${secret ? 'present' : 'missing'} issuer=${issuer} audience=${audience}`,
+    );
   }
 
   async validate(payload: JwtPayload) {
