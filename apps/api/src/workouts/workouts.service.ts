@@ -62,14 +62,16 @@ export type TodayResponse =
   | { status: 'no_plan'; startsAt?: string }
   | { status: 'rest_day'; nextTrainingDay: TrainingDay | null }
   | { status: 'plan_completed'; assignmentId: string }
-  | { status: 'already_done'; session: WorkoutSession }
+  | { status: 'already_done'; assignmentId: string; session: WorkoutSession }
   | {
       status: 'pending';
+      assignmentId: string;
       trainingDay: TrainingDay & { exercises: PlanDayExercise[] };
       session: null;
     }
   | {
       status: 'in_progress';
+      assignmentId: string;
       trainingDay: TrainingDay & { exercises: PlanDayExercise[] };
       session: WorkoutSession;
     };
@@ -159,22 +161,38 @@ export class WorkoutsService {
     }
 
     // 5. Verificar sesión existente hoy
-    const session = await this.findTodaySession(athleteId, trainingDay.id, today);
+    const session = await this.findTodaySession(
+      athleteId,
+      trainingDay.id,
+      today,
+      timezone,
+      assignment.id,
+    );
 
     if (session) {
       if (session.status === 'completed') {
-        return { status: 'already_done', session };
+        return { status: 'already_done', assignmentId: assignment.id, session };
       }
       if (session.status === 'in_progress') {
         const dayWithExercises = await this.loadDayWithExercises(trainingDay);
-        return { status: 'in_progress', trainingDay: dayWithExercises, session };
+        return {
+          status: 'in_progress',
+          assignmentId: assignment.id,
+          trainingDay: dayWithExercises,
+          session,
+        };
       }
       // Si es 'abandoned', continuar como si no existiera
     }
 
     // 6. Día pendiente
     const dayWithExercises = await this.loadDayWithExercises(trainingDay);
-    return { status: 'pending', trainingDay: dayWithExercises, session: null };
+    return {
+      status: 'pending',
+      assignmentId: assignment.id,
+      trainingDay: dayWithExercises,
+      session: null,
+    };
   }
 
   // ─── Sesiones ─────────────────────────────────────────────────────────────
@@ -216,6 +234,19 @@ export class WorkoutsService {
       }
 
       sessionTrainingDayId = trainingDay.id;
+
+      const existingSession = await this.sessionRepo.findOne({
+        where: {
+          athleteId: athlete.id,
+          planAssignmentId: assignment.id,
+          trainingDayId: sessionTrainingDayId,
+          status: 'in_progress',
+        },
+      });
+
+      if (existingSession) {
+        throw this.buildActiveSessionConflict();
+      }
     }
 
     const session = this.sessionRepo.create({
@@ -227,7 +258,15 @@ export class WorkoutsService {
       status: 'in_progress',
     });
 
-    return this.sessionRepo.save(session);
+    try {
+      return await this.sessionRepo.save(session);
+    } catch (error) {
+      if (this.isActiveSessionUniqueViolation(error)) {
+        throw this.buildActiveSessionConflict();
+      }
+
+      throw error;
+    }
   }
 
   async getSession(sessionId: string, userId: string): Promise<WorkoutSession> {
@@ -583,11 +622,33 @@ export class WorkoutsService {
     }, 0);
   }
 
-  /** Retorna la fecha local del atleta como medianoche UTC (para comparar rangos) */
+  private buildActiveSessionConflict(): ConflictException {
+    return new ConflictException({
+      error: 'CONFLICT',
+      message: 'Ya existe una sesión en progreso para esta asignación y día de entrenamiento',
+    });
+  }
+
+  private isActiveSessionUniqueViolation(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const candidate = error as {
+      code?: string;
+      constraint?: string;
+      driverError?: { code?: string; constraint?: string };
+    };
+
+    const code = candidate.driverError?.code ?? candidate.code;
+    const constraint = candidate.driverError?.constraint ?? candidate.constraint;
+
+    return code === '23505' && constraint === 'uq_workout_sessions_active_today_context';
+  }
+
+  /** Retorna la fecha local del atleta normalizada a YYYY-MM-DDT00:00:00Z */
   private getLocalDate(timezone: string): Date {
-    const now = new Date();
-    const localStr = now.toLocaleDateString('en-CA', { timeZone: timezone }); // "YYYY-MM-DD"
-    return new Date(`${localStr}T00:00:00Z`);
+    return new Date(`${this.formatLocalDate(new Date(), timezone)}T00:00:00Z`);
   }
 
   /** Diferencia en días entre dos fechas (ambas a medianoche UTC) */
@@ -616,18 +677,100 @@ export class WorkoutsService {
     athleteId: string,
     trainingDayId: string,
     today: Date,
+    timezone: string,
+    planAssignmentId?: string,
   ): Promise<WorkoutSession | null> {
-    const start = today;
-    const end = new Date(today.getTime() + 86_400_000);
+    const { start, end } = this.getLocalDayRange(today, timezone);
 
-    return this.sessionRepo
+    const query = this.sessionRepo
       .createQueryBuilder('s')
       .where('s.athlete_id = :athleteId', { athleteId })
       .andWhere('s.training_day_id = :trainingDayId', { trainingDayId })
       .andWhere('s.started_at >= :start', { start: start.toISOString() })
       .andWhere('s.started_at < :end', { end: end.toISOString() })
-      .orderBy('s.started_at', 'DESC')
-      .getOne();
+      .orderBy('s.started_at', 'DESC');
+
+    if (planAssignmentId) {
+      query.andWhere('s.plan_assignment_id = :planAssignmentId', { planAssignmentId });
+    }
+
+    return query.getOne();
+  }
+
+  private getLocalDayRange(today: Date, timezone: string): { start: Date; end: Date } {
+    const start = this.getUtcInstantForLocalMidnight(today, timezone);
+    const nextDay = new Date(
+      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 1),
+    );
+
+    return {
+      start,
+      end: this.getUtcInstantForLocalMidnight(nextDay, timezone),
+    };
+  }
+
+  private getUtcInstantForLocalMidnight(localDate: Date, timezone: string): Date {
+    const year = localDate.getUTCFullYear();
+    const month = localDate.getUTCMonth();
+    const day = localDate.getUTCDate();
+    const utcGuess = new Date(Date.UTC(year, month, day, 0, 0, 0));
+
+    const initialOffset = this.getTimezoneOffsetMilliseconds(utcGuess, timezone);
+    const initialResult = new Date(utcGuess.getTime() - initialOffset);
+    const refinedOffset = this.getTimezoneOffsetMilliseconds(initialResult, timezone);
+
+    return new Date(utcGuess.getTime() - refinedOffset);
+  }
+
+  private getTimezoneOffsetMilliseconds(date: Date, timezone: string): number {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).formatToParts(date);
+
+    const values = parts.reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== 'literal') {
+        acc[part.type] = part.value;
+      }
+
+      return acc;
+    }, {});
+
+    const asUtc = Date.UTC(
+      Number(values.year),
+      Number(values.month) - 1,
+      Number(values.day),
+      Number(values.hour),
+      Number(values.minute),
+      Number(values.second),
+    );
+
+    return asUtc - date.getTime();
+  }
+
+  private formatLocalDate(referenceDate: Date, timezone: string): string {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(referenceDate);
+
+    const values = parts.reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== 'literal') {
+        acc[part.type] = part.value;
+      }
+
+      return acc;
+    }, {});
+
+    return `${values.year}-${values.month}-${values.day}`;
   }
 
   /** Busca el próximo training_day no-rest en los próximos 14 días */
